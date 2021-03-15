@@ -4,19 +4,19 @@
 echo 'PiHole configuration starting...'
 # Defining some variables to install PiHole
 pihole_interface='eth0'
-ip4=$(/sbin/ip -o -4 addr list eth0 | awk '{print $4}' | cut -d/ -f1)
-ip6=$(/sbin/ip -o -6 addr list eth0 | awk '{print $4}' | cut -d/ -f1)
+ip4=$(/sbin/ip -o -4 addr list eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
+ip6=$(/sbin/ip -o -6 addr list eth0 | awk '{print $4}' | cut -d/ -f1 | head -n 1)
 pihole_dns1='1.1.1.1'
 pihole_dns2='1.0.0.1'
-pihole_dns3='2606:4700:4700::1111'
-pihole_dns4='2606:4700:4700::1001'
+pihole_dns3=''
+pihole_dns4=''
 endpoint='homefox.ovh'
 
 read -r -p 'Enter a password for the PiHole admin interface: ' pihole_password
 
 mkdir /etc/pihole
 cat >/etc/pihole/setupVars.conf <<EOF
-WEBPASSWORD=$(echo -n "$pihole_password" | sha256sum | awk '{printf "%s",$1 }' | sha256sum)
+WEBPASSWORD=$(echo -n "$pihole_password" | sha256sum | awk '{printf "%s",$1 }' | sha256sum | head -n1 | cut -d " " -f1)
 CONDITIONAL_FORWARDING=false
 ADMIN_EMAIL=
 WEBUIBOXEDLAYOUT=boxed
@@ -46,10 +46,13 @@ apt-get update
 apt-get install -y wget
 echo 'Installing PiHole...'
 wget -O basic-install.sh https://install.pi-hole.net
+chmod +x basic-install.sh
+./basic-install.sh --unattended
 
 # Wireguard Installation
 echo 'Fetching Wireguard dependencies...'
-apt-get install -y wireguard wireguard-dkms wireguard-tools iproute2 qrencode linux-headers-"$(uname -r)" --no-install-recommends
+# raspberrypi-kernel-headers or linux-headers-$(uname -r)
+apt-get install -y wireguard wireguard-dkms wireguard-tools iproute2 qrencode raspberrypi-kernel-headers --no-install-recommends
 mkdir -p /etc/wireguard/
 chmod 700 /etc/wireguard/
 Umask 077
@@ -79,16 +82,17 @@ num=0
 while [[ ! $num == "$peer_number" ]]; do
   wg genkey | tee /etc/wireguard/client"$num"_private_key | wg pubkey > /etc/wireguard/client"$num"_public_key
   # Adding peer information to server conf
-  cat >/etc/wireguard/wg0.conf <<EOF
+  id=$((num+2))
+  cat >>/etc/wireguard/wg0.conf <<EOF
 [Peer]
 #Peer-$num
 PublicKey = $(cat /etc/wireguard/client"$num"_public_key)
-AllowedIPs = 10.9.0.$(num+2)/32
+AllowedIPs = 10.9.0.$id/32
 EOF
   # Generating peer conf file
   cat >/etc/wireguard/peer"$num".conf <<EOF
 [Interface]
-Address = 10.9.0.$(num+2)/32
+Address = 10.9.0.$id/32
 DNS = $ip4
 PrivateKey = $(cat /etc/wireguard/client"$num"_private_key)
 
