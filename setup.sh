@@ -10,7 +10,6 @@ pihole_dns1='1.1.1.1'
 pihole_dns2='1.0.0.1'
 pihole_dns3=''
 pihole_dns4=''
-endpoint='homefox.ovh'
 
 read -r -p 'Enter a password for the PiHole admin interface: ' pihole_password
 
@@ -50,75 +49,15 @@ chmod +x basic-install.sh
 ./basic-install.sh --unattended
 
 # Wireguard Installation
-echo 'Fetching Wireguard dependencies...'
-# raspberrypi-kernel-headers or linux-headers-$(uname -r)
-apt-get install -y wireguard wireguard-dkms wireguard-tools iproute2 qrencode raspberrypi-kernel-headers --no-install-recommends
-mkdir -p /etc/wireguard/
-chmod 700 /etc/wireguard/
-Umask 077
-
-## Server creation
-echo 'Creating server keys...'
-wg genkey | tee /etc/wireguard/server_private_key | wg pubkey > /etc/wireguard/server_public_key
-cat >/etc/wireguard/wg0.conf <<EOF
-[Interface]
-Address = 10.9.0.1/32
-ListenPort = 1194
-DNS = $ip4
-PrivateKey = $(cat /etc/wireguard/server_private_key)
-PostUp = iptables -A FORWARD -i %i -j ACCEPT; iptables -A FORWARD -o %i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
-PostDown = iptables -D FORWARD -i %i -j ACCEPT; iptables -D FORWARD -o %i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-EOF
-
-## Peer creation
-peer_number_question='How many peers do you need ? [0-9]'
-read -r -p "$peer_number_question" peer_number
-while [[ ! $peer_number =~ ^[0-9]$ ]]; do
-  read -r -p "$peer_number_question" peer_number
-done
-
-echo 'Creating peers...'
-num=0
-while [[ ! $num == "$peer_number" ]]; do
-  wg genkey | tee /etc/wireguard/client"$num"_private_key | wg pubkey > /etc/wireguard/client"$num"_public_key
-  # Adding peer information to server conf
-  id=$((num+2))
-  cat >>/etc/wireguard/wg0.conf <<EOF
-[Peer]
-#Peer-$num
-PublicKey = $(cat /etc/wireguard/client"$num"_public_key)
-AllowedIPs = 10.9.0.$id/32
-EOF
-  # Generating peer conf file
-  cat >/etc/wireguard/peer"$num".conf <<EOF
-[Interface]
-Address = 10.9.0.$id/32
-DNS = $ip4
-PrivateKey = $(cat /etc/wireguard/client"$num"_private_key)
-
-[Peer]
-PublicKey = $(cat /etc/wireguard/client"$num"_public_key)
-Endpoint = $endpoint:1194
-AllowedIPs = 0.0.0.0/0, ::/0
-EOF
-  ((num=num+1))
-done
-echo 'Peers successfully created.'
-
-## Setting up launch at startup
-sudo wg-quick up wg0
-sudo systemctl enable wg-quick@wg0
-
-## Enable IPv4 forwarding
-echo 'Configuring IP Forwarding...'
-sed -i 's/\#net.ipv4.ip_forward=1/net.ipv4.ip_forward=1/g' /etc/sysctl.conf
-sudo sysctl -p
-echo 1 | sudo tee /proc/sys/net/ipv4/ip_forward
+echo 'Installing a VPN with PiVPN...'
+curl -L https://install.pivpn.io | bash
 
 # Cleanup
-echo "Cleaning..."
+echo 'Cleaning...'
 rm -rf \
     /tmp/* \
     /var/lib/apt/lists/* \
     /var/tmp/*
 echo 'Install done ! Consider rebooting your system.'
+echo 'You can add peers to your vpn with "pivpn add"'
+echo 'You can display your peer profile with "pivpn -qr"'
